@@ -22,7 +22,7 @@ public class Test01 {
 //        long id = SqlSeqUtil.getId("intention");
 //        System.out.println(id);
 
-        for (int i = 0; i < 15; i++) {
+        for (int i = 0; i < 16; i++) {
             long id = SqlSeqUtil.getId("intention");
             System.out.println(id);
         }

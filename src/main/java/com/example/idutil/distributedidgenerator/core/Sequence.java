@@ -8,6 +8,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 
 import javax.sql.DataSource;
 
@@ -20,14 +21,15 @@ public class Sequence {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(Sequence.class);
 
-    private DataSource dataSource;
-    private int        blockSize;
-    private volatile long startValue = 0L;
-    private volatile long   endValue;
+    private          DataSource dataSource;
+    private          int        blockSize;
+    private volatile long       startValue = 0L;
+    private volatile long       endValue;
     //    private Step   step;
-    private          String tableName;
+    private          String     tableName;
 
-    private AtomicLong atomicLong;
+    private AtomicLong    atomicLong;
+    private ReentrantLock lock;
 
     public Sequence(DataSource dataSource, String tableName, int blockSize) {
         this.tableName = tableName;
@@ -38,23 +40,26 @@ public class Sequence {
         //        step = new Step(startValue, blockSize);
         // 第一次进入需要同步数据库的值
         getNextBlock();
-    }
+        lock = new ReentrantLock();
 
-    // todo 是否需要加同步 ？
+    }
 
     /**
      * 获取 id 值   第一次进入方法需要同步数据库的值
      * 1. 内存中 blocksize 没有使用完， 直接在内存中自增获取（线程安全）
      * 2. 去数据库中同步新的一段值 （线程安全）
      */
-    public synchronized Long getId(String tableName) {
-
-        if (atomicLong.get() < endValue) { // 有没有线程安全问题 ？
-            return atomicLong.incrementAndGet();
+    public Long getId() {
+        lock.lock();
+        try {
+            if (atomicLong.get() >= endValue) {
+                getNextBlock();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            lock.unlock();
         }
-
-        getNextBlock();
-
         return atomicLong.incrementAndGet();
 
     }
@@ -76,7 +81,7 @@ public class Sequence {
             // 获取当前值
             Long value = getPersistenceValue(connection, tableName);
             if (value == null || value.intValue() < 0) {
-                value = initPersistenceValue(connection, tableName);
+                value = initPersistenceValue(connection, tableName, value);
             }
             if (value > Long.MAX_VALUE - blockSize) {
                 throw new RuntimeException("No more id value.");
@@ -107,8 +112,7 @@ public class Sequence {
     }
 
     /**
-     * //todo
-     * 在并发的情况下 ， 第一次设置失败 ， 需要重试
+     * //todo 此处可能分布式并发保存失败 ， 需要重试
      */
     private boolean saveValue(Connection connection, Long value, String key) {
         PreparedStatement statement = null;
@@ -137,14 +141,15 @@ public class Sequence {
     /**
      * 初始化 id 的值
      * <p>
-     * //todo 是否需要线程安全
+     * //todo 此处可能分布式并发更新失败 ， 需要重试
      */
-    private Long initPersistenceValue(Connection connection, String key) {
+    private Long initPersistenceValue(Connection connection, String key, Long value) {
         PreparedStatement statement = null;
         try {
-            statement = connection.prepareStatement("insert into idgenerator (table_name,current_value) values (?,?)");
-            statement.setString(1, key);
-            statement.setLong(2, startValue);
+            statement = connection.prepareStatement("UPDATE idgenerator SET current_value = ? WHERE table_name = ? and current_value = ?");
+            statement.setLong(1, startValue);
+            statement.setString(2, key);
+            statement.setLong(3, value);
             statement.executeUpdate();
         } catch (SQLException e) {
             e.printStackTrace();

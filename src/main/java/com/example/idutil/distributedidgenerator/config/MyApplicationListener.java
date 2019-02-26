@@ -10,6 +10,7 @@ import org.springframework.context.ApplicationContextAware;
 import org.springframework.context.ApplicationEvent;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 
 import javax.sql.DataSource;
 
@@ -39,6 +40,10 @@ public class MyApplicationListener implements ApplicationListener, ApplicationCo
             return;
         }
         DataSource dataSource = context.getBean(DataSource.class);
+        Environment environment = context.getEnvironment();
+        Integer blockSize = environment.getProperty("my.sqlseq.blocksize", Integer.class);
+        if (blockSize != null && blockSize > 1)
+            SqlSeqUtil.setBlockSize(blockSize);
         SqlSeqUtil.initSqlSeq(dataSource);
         inital = true;
 

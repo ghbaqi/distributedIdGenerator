@@ -42,7 +42,7 @@ public class SqlSeqUtil {
         if (StringUtils.isEmpty(tableName)) {
             throw new IllegalArgumentException("tableName 不能为空");
         }
-        return sequenceMap.get(tableName).getId(tableName);
+        return sequenceMap.get(tableName).getId();
     }
 
 
@@ -65,5 +65,7 @@ public class SqlSeqUtil {
         return keyList;
     }
 
-
+    public static void setBlockSize(int blockSize) {
+        SqlSeqUtil.blockSize = blockSize;
+    }
 }
